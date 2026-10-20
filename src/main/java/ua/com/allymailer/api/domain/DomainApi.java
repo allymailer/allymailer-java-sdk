@@ -1,0 +1,146 @@
+package ua.com.allymailer.api.domain;
+
+import java.util.Map;
+import ua.com.allymailer.api.domain.model.DomainDeleteRequest;
+import ua.com.allymailer.api.domain.model.DomainDeleteResponse;
+import ua.com.allymailer.api.domain.model.DomainGetDnsRecordsRequest;
+import ua.com.allymailer.api.domain.model.DomainGetDnsRecordsResponse;
+import ua.com.allymailer.api.domain.model.DomainGetSandboxDomainResponse;
+import ua.com.allymailer.api.domain.model.DomainListRequest;
+import ua.com.allymailer.api.domain.model.DomainListResponse;
+import ua.com.allymailer.api.domain.model.DomainValidateDkimRequest;
+import ua.com.allymailer.api.domain.model.DomainValidateDkimResponse;
+import ua.com.allymailer.api.domain.model.DomainValidateVerificationRecordRequest;
+import ua.com.allymailer.api.domain.model.DomainValidateVerificationRecordResponse;
+import ua.com.allymailer.client.ApiClient;
+import ua.com.allymailer.client.ApiException;
+
+/**
+ * Методи для налаштування доменів надсилання та перевірки їх статусів. Корисні, якщо вам недостатньо
+ * додавання доменів через вебінтерфейс AllyMailer і, наприклад, хочеться автоматизувати додавання
+ * доменів для ваших власних клієнтів.
+ * <p>
+ * Щоб додати новий домен надсилання через API, ви маєте зробити таке:
+ * - Підтвердіть домен, з якого надсилатимуться листи, внісши необхідні DNS-записи, отримавши їх за допомогою методу [domain/get-dns-records](https://docs.allymailer.com.ua/ua/web-api-ref#domain-get-dns-records).
+ * - Після додавання раз на 5–10 хвилин викликайте [domain/list](https://docs.allymailer.com.ua/ua/web-api-ref#domain-list) із зазначенням доданого домену (або кількох доменів одразу, якщо перевірити треба декілька) і перевіряйте verification-record.status та dkim.status у відповіді domain/list. Можна робити запит і частіше — але точно не частіше за раз на хвилину.
+ * - Якщо verification-record.status="unconfirmed", то ініціюйте перевірку правильності запису володіння доменом за допомогою виклику [domain/validate-verification-record](https://docs.allymailer.com.ua/ua/web-api-ref#domain-validate-verification-record).
+ * - Якщо dkim.status="inactive", то ініціюйте перевірку правильності DKIM-запису за допомогою виклику [domain/validate-dkim](https://docs.allymailer.com.ua/ua/web-api-ref#domain-validate-dkim) (втім, DKIM-записи AllyMailer і сам перевіряє раз на пів години).
+ * - І лише коли domain/list повернув verification-record.status="confirmed" та dkim.status="active" для домену, можна використовувати домен для надсилання та припинити його очікування й виклики для нього зазначених вище методів.
+ */
+public class DomainApi {
+    private final ApiClient client;
+
+    public DomainApi(ApiClient client) {
+        this.client = client;
+    }
+
+    /**
+     * Повертає інформацію про записи, які потрібно внести в DNS для використання домену в AllyMailer.
+     * <p>
+     * Щоб надсилати листи, вам потрібно підтвердити володіння доменом, зі зворотною адресою якого ви
+     * збираєтеся їх надсилати, а також налаштувати DKIM-підпис для цього домену. Метод дозволяє вам
+     * зареєструвати домен у AllyMailer і згенерувати запис для перевірки володіння та DKIM-ключ, або
+     * отримати їх, якщо вони були згенеровані раніше.
+     * <p>
+     * Після отримання успішної відповіді вам потрібно додати DNS-записи на кшталт цих:
+     * <p>
+     * `&#64;             IN TXT "allymailer-validate-hash=483bb362ebdbeedd755cfb1d4d661"`
+     * <p>
+     * `us._domainkey IN TXT "k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDo7"`
+     * <p>
+     * `&#64;             IN TXT  "v=spf1 include:spf.allymailer.com.ua ~all"`
+     * <p>
+     * - Перший запис представлено вмістом поля "verification-record".
+     * - Другий запис має включати вміст поля "dkim" одразу після "p=". Зверніть увагу на ім'я запису! Префікс "us._domainkey." дуже важливий для того, щоб DKIM-селектор AllyMailer працював правильно.
+     * - Третій запис необов'язковий, але ми дуже рекомендуємо його додавати — це SPF-запис, який підвищує доставлюваність. Можливо, вона у вас уже є — у цьому разі просто додайте include:spf.allymailer.com.ua після v=spf1.
+     * <p>
+     * Вимоги до синтаксису записів у різних DNS-провайдерів можуть відрізнятися:
+     * - іноді потрібно вказувати повне ім'я домену із завершальною крапкою, на кшталт "example.com." замість символа &#64;.
+     * - деякі провайдери вимагають указувати час життя (TTL, наприклад 3600)
+     * - для деяких провайдерів буде зайвим поміщення значень у подвійні лапки
+     * Будь ласка, перевірте вимоги свого провайдера й підкажіть це своїм користувачам.
+     * <p>
+     * Для реалізації white-label рішень є можливість змінити стандартні DNS-записи на ті, що не містять
+     * підрядка "allymailer". Щоб дізнатися докладніше — напишіть у техпідтримку.
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-get-dns-records
+     * @throws ApiException when the API returns an error
+     */
+    public DomainGetDnsRecordsResponse getDnsRecords(DomainGetDnsRecordsRequest request) {
+        return DomainGetDnsRecordsResponse.fromMap(client.call("/domain/get-dns-records.json", request.toMap()));
+    }
+
+    /**
+     * Ініціює перевірку запису про володіння доменом.
+     * <p>
+     * Якщо результат виклику цього методу успішний (200 OK) — це означає, що перевірку запущено. Для
+     * отримання результату потрібно пізніше перевірити поле verification-record.status, що повертається
+     * методом [domain/list](https://docs.allymailer.com.ua/ua/web-api-ref#domain-list). Докладніше читайте
+     * [тут](https://docs.allymailer.com.ua/ua/web-api-ref#domain).
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-validate-verification-record
+     * @throws ApiException when the API returns an error
+     */
+    public DomainValidateVerificationRecordResponse validateVerificationRecord(DomainValidateVerificationRecordRequest request) {
+        return DomainValidateVerificationRecordResponse.fromMap(client.call("/domain/validate-verification-record.json", request.toMap()));
+    }
+
+    /**
+     * Перевіряє DKIM-запис домену.
+     * <p>
+     * Якщо результат виклику цього методу успішний (200 OK) — це означає, що перевірку запущено. Для
+     * отримання результату потрібно пізніше перевірити поле dkim.status, що повертається методом
+     * [domain/list](https://docs.allymailer.com.ua/ua/web-api-ref#domain-list). Докладніше читайте
+     * [тут](https://docs.allymailer.com.ua/ua/web-api-ref#domain).
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-validate-dkim
+     * @throws ApiException when the API returns an error
+     */
+    public DomainValidateDkimResponse validateDkim(DomainValidateDkimRequest request) {
+        return DomainValidateDkimResponse.fromMap(client.call("/domain/validate-dkim.json", request.toMap()));
+    }
+
+    /**
+     * Повертає список усіх зареєстрованих доменів користувача або проєкту разом зі статусами останніх
+     * перевірок.
+     * <p>
+     * Повертає статус останньої перевірки DNS-запису володіння доменом і DKIM-запису для кожного домену.
+     * Докладніше [тут](https://docs.allymailer.com.ua/ua/web-api-ref#domain).
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-list
+     * @throws ApiException when the API returns an error
+     */
+    public DomainListResponse list(DomainListRequest request) {
+        return DomainListResponse.fromMap(client.call("/domain/list.json", request.toMap()));
+    }
+
+    /**
+     * Створює sandbox-домен облікового запису або повертає наявний.
+     * <p>
+     * Повертає sandbox-домен облікового запису, готовий до використання в полі `from_email` методу
+     * [email/send](https://docs.allymailer.com.ua/ua/web-api-ref#email-send). Якщо sandbox-домену немає,
+     * AllyMailer створює його та повертає. Повторні виклики повертають той самий домен.
+     * <p>
+     * Метод доступний лише з API-ключем облікового запису. API-ключі проєктів не можуть створювати
+     * sandbox-домени.
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-get-sandbox-domain
+     * @throws ApiException when the API returns an error
+     */
+    public DomainGetSandboxDomainResponse getSandboxDomain() {
+        return DomainGetSandboxDomainResponse.fromMap(client.call("/domain/get-sandbox-domain.json", null));
+    }
+
+    /**
+     * Видаляє домен. Увага: для видалення домену, що належить проєкту, вам потрібно використати API-ключ
+     * проєкту.
+     * <p>
+     * Видаляє домен.
+     * <p>
+     * Документація: https://docs.allymailer.com.ua/ua/web-api-ref#domain-delete
+     * @throws ApiException when the API returns an error
+     */
+    public DomainDeleteResponse delete(DomainDeleteRequest request) {
+        return DomainDeleteResponse.fromMap(client.call("/domain/delete.json", request.toMap()));
+    }
+}
