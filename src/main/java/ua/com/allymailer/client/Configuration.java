@@ -16,7 +16,7 @@ public class Configuration {
     private final String apiKey;
     private String baseUrl = DEFAULT_BASE_URL;
     private Duration timeout = Duration.ofSeconds(30);
-    private String userAgent = "allymailer-java-sdk/2.0.0";
+    private String userAgent = "allymailer-java-sdk/2.1.1";
     private String platform;
 
     /** @param apiKey user or project API key, sent in the X-API-KEY header */

@@ -27,7 +27,7 @@ public class TemplateListObject {
     private String editorType;
 
     /**
-     * Параметр для вибору [шаблонізатора](https://docs.allymailer.com.ua/en/template-engines) — або
+     * Параметр для вибору [шаблонізатора](https://docs.allymailer.com.ua/ua/template-engines) — або
      * "simple", або "velocity", або "liquid", або "none". За замовчуванням — "simple".
      * <p>
      * Raw value, kept also when the SDK does not know it.
