@@ -14,7 +14,7 @@
 <dependency>
     <groupId>ua.com.allymailer</groupId>
     <artifactId>java-sdk</artifactId>
-    <version>2.1.1</version>
+    <version>2.1.2</version>
 </dependency>
 ```
 
